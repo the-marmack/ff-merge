@@ -1,0 +1,26 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+
+# This repo's caller for the reusable merge-notice workflow. When a PR is opened it posts
+# a one-time comment explaining this repo merges via `/merge` (see merge.yaml).
+#
+# pull_request_target (not pull_request) so the notice also reaches fork PRs; the reusable
+# workflow only posts a static comment with a pull-requests:write token, so the elevated
+# context is safe. No secret needed.
+#
+# Pinned to a full commit SHA; Renovate keeps the pin fresh.
+name: Merge Notice
+
+on:
+  pull_request_target:
+    types: [opened]
+
+# the reusable workflow comments with GITHUB_TOKEN; grant just that
+permissions:
+  pull-requests: write
+
+jobs:
+  notice:
+    uses: the-marmack/github-workflows/.github/workflows/merge-notice.yaml@a0d0170124ad80a06082078b60669d7c99d33ee6 # v6.3.0
+    with:
+      pr-number: ${{ github.event.pull_request.number }}

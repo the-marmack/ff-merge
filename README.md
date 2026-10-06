@@ -1,0 +1,217 @@
+# ff-merge
+
+> Forked from [`bitwise-media-group/ff-merge`](https://github.com/bitwise-media-group/ff-merge) (MIT).
+
+A GitHub Action for **signature-preserving fast-forward merges**. A maintainer comments `/merge` on an approved, green
+PR and the base branch is fast-forwarded to the PR head, keeping each commit's original signature. The reusable
+workflows that run this action live in
+[`the-marmack/github-workflows`](https://github.com/the-marmack/github-workflows) — consuming repos wire
+it up from there (see [Per-repo setup](#per-repo-setup)).
+
+GitHub's merge button can't give you a linear history that keeps the **original developer's signature**:
+
+| Strategy         | History    | Signature on the base branch                                                     |
+| ---------------- | ---------- | -------------------------------------------------------------------------------- |
+| Merge commit     | non-linear | underlying commits stay signed; the merge commit is GitHub `web-flow` RSA-signed |
+| Squash           | linear     | new object → GitHub RSA-signed, original authorship & signature gone             |
+| Rebase           | linear     | new objects (new SHAs) → original signatures stripped                            |
+| **Fast-forward** | **linear** | **objects untouched → original developer signatures intact**                     |
+
+A fast-forward isn't a merge — it just moves the base ref to a commit that already exists (the PR head). Because the
+commit object is unchanged, its SHA and embedded signature survive exactly. A welcome side effect: with each
+Conventional Commit landing individually on the base branch, **release-please no longer needs the squash-footer
+workaround** — it attributes every `fix:` / `feat:` natively.
+
+Everything here is first-party: this action, the GitHub-published `@actions/*` packages it bundles, and
+[`actions/create-github-app-token`](https://github.com/actions/create-github-app-token). No unknown third-party
+marketplace actions.
+
+## What's in this repo
+
+- **`ff-merge` action** (root `action.yml`, TypeScript in `src/`) — verifies eligibility and moves the ref. The gate is
+  pure, unit-tested logic; the GitHub I/O is a thin Octokit wrapper.
+
+The reusable workflows that run this action — `merge.yaml` (manual `/merge` + set-and-forget `/auto-merge`),
+`merge-notice.yaml`, `merge-review-ack.yaml`, and `dependabot-merge.yaml` — live in
+[`the-marmack/github-workflows`](https://github.com/the-marmack/github-workflows); consuming repos copy
+the thin caller workflows from that repo's `examples/`. This repo dogfoods the merge flow via its own
+`.github/workflows/` (its dependency PRs come from the org Renovate bot, which squash-merges via the API, so the
+`dependabot-merge.yaml` caller is not used here — the reusable remains for consumers still on Dependabot).
+
+## How it works
+
+1. A maintainer comments `/merge` on an approved PR.
+2. The caller workflow (in the consuming repo) fires on `issue_comment` and calls the reusable `merge.yaml` from
+   `the-marmack/github-workflows` with the PR number.
+3. The reusable workflow mints a short-lived App token and runs the `ff-merge` action, which verifies, in order: the
+   actor has **write+** access · the PR is **open**, not a draft · its review decision is **APPROVED** · **all checks
+   pass** · the head is a true **fast-forward** of its base.
+4. The action moves the base ref to the PR head. GitHub sees the head become reachable from base and auto-marks the PR
+   **Merged**. On refusal it comments the reasons on the PR and fails the check. The action keeps a single sticky status
+   comment per PR (tagged with a hidden `<!-- ff-merge -->` marker): re-running it updates that comment in place — the
+   eventual confirmation replaces the earlier refusal — rather than stacking a fresh comment each time.
+5. The action closes any issues the PR links with closing keywords (`Closes #N`, `Fixes owner/repo#N`, …). GitHub only
+   runs that auto-close for merges made through its own merge API, never for a fast-forward (a raw ref move), so the
+   action replays it. Best effort: the merge has already landed, so a failure here (e.g. the App lacks `issues: write`)
+   only warns.
+
+`git log --show-signature` on the base branch shows the original developer's signature — verifiable end to end.
+
+## One-time org setup
+
+### 1. Create the GitHub App
+
+Org **Settings → Developer settings → GitHub Apps → New GitHub App**.
+
+- **Name:** `FF Merge` (any name).
+- **Webhook:** uncheck **Active** (not needed).
+- **Repository permissions:**
+
+  | Permission     | Level            | Why                                           |
+  | -------------- | ---------------- | --------------------------------------------- |
+  | Contents       | **Read & write** | move the base ref (the merge itself)          |
+  | Pull requests  | **Read & write** | read PR state; post/update the status comment |
+  | Issues         | **Read & write** | close linked issues on merge (`Closes #N`)    |
+  | Administration | **Read-only**    | resolve the actor's permission level (step 3) |
+
+  > Don't want `Administration: read`? Set `maintainer-only: false` and rely on the caller's `author_association` gate
+  > instead. You lose the precise write-vs-triage distinction but drop the broader scope.
+  >
+  > `Issues: write` only powers the linked-issue auto-close (see [How it works](#how-it-works), step 5). Omit it and
+  > merges still work — the action just logs a warning and leaves the issues open.
+
+- **Where can this app be installed?** Only on this account.
+
+Create it, **Generate a private key** (downloads a `.pem`), and note the **Client ID**.
+
+### 2. Install the App
+
+From the App's page → **Install App** → install on the org, **All repositories** (or the ones that will use `/merge`).
+The App must be installed on every repo that calls the workflow.
+
+### 3. Publish the credentials org-wide
+
+Org **Settings → Secrets and variables → Actions**:
+
+- **Variables → New** → `FF_MERGE_CLIENT_ID` = the Client ID.
+- **Secrets → New** → `FF_MERGE_PRIVATE_KEY` = the full contents of the `.pem`.
+
+Set both to **All repositories** (or scope to selected repos), so consuming repos need no per-repo secret config.
+
+### 4. Let the App bypass branch protection
+
+The ref update is a direct write to a protected branch, so the App must bypass the pull-request rule. In a per-repo (or
+org-level) **ruleset** — **Settings → Rules → Rulesets → New branch ruleset** — set:
+
+- **Target branches:** `main` (and any release branches you fast-forward into).
+- **Bypass list:** add the **FF Merge** App.
+- **Rules:** ✅ Require linear history · ✅ Require a pull request before merging (with approvals) · ✅ Require status
+  checks to pass · ✅ Require branches to be up to date before merging · ✅ Block force pushes.
+
+> **Why the App bypasses, yet nothing is unguarded:** the bypass also bypasses required reviews and checks, so the
+> action re-verifies approval and checks itself rather than trusting that branch protection ran. Branch protection is
+> the human guard rail; the action is the automation guard rail. Both hold.
+
+## Per-repo setup
+
+Copy the merge callers from
+[`the-marmack/github-workflows/examples/`](https://github.com/the-marmack/github-workflows/tree/main/examples)
+into the consuming repo's `.github/workflows/` — `merge.yaml` (and optionally `merge-notice.yaml`,
+`merge-review-ack.yaml`, and `dependabot-merge.yaml`) — and pin each `uses:` to a release tag or full commit SHA. That's
+the entire per-repo footprint; then a maintainer can comment `/merge` on any approved, green, up-to-date PR.
+
+## `merge-notice` — tell contributors how to merge
+
+`the-marmack/github-workflows` ships a companion `merge-notice.yaml`: when a PR is opened it posts a single
+comment explaining that the repo merges by fast-forward via a `/merge` comment, so contributors who don't know the
+convention don't reach for the merge button.
+
+It triggers on **`pull_request_target` (opened)** rather than `pull_request`, so the notice also reaches **fork PRs** —
+where it matters most, since a fork's `pull_request` token is read-only and couldn't comment. This is the safe use of
+that trigger: it never checks out or runs PR code and interpolates no PR-controlled content; it only posts a static
+comment with a token scoped to `pull-requests: write`. No App token or secret is involved.
+
+## The one real trade-off
+
+A fast-forward is only possible when the branch is a **direct descendant of the base tip**. When the base moves, the
+contributor must **rebase and re-sign locally** — never rebase server-side, since that rewrites objects and re-signs
+them, defeating the whole point. The _Require branches to be up to date_ rule enforces this. The cost is
+**serialization**: under contention, the second PR rebases again before it can merge. For typical throughput this is a
+non-issue; for a high-traffic monorepo it's the price of preserved signatures. (GitHub's native merge queue would remove
+the contention but re-signs every commit, so it's out.)
+
+## Configuration reference
+
+### `ff-merge` action
+
+| Input              | Default                    | Meaning                                                                                      |
+| ------------------ | -------------------------- | -------------------------------------------------------------------------------------------- |
+| `token`            | — (required)               | App installation token (`contents`, `pull-requests`, `administration:read`, `issues:write`). |
+| `repository`       | `${{ github.repository }}` | `owner/repo` whose base branch is fast-forwarded.                                            |
+| `pr-number`        | — (required)               | PR to fast-forward.                                                                          |
+| `actor`            | `${{ github.actor }}`      | Login checked for write access when `maintainer-only` is true.                               |
+| `require-approval` | `true`                     | Require review decision `APPROVED`.                                                          |
+| `maintainer-only`  | `true`                     | Require the actor to have write+ access.                                                     |
+| `require-label`    | `''` (none)                | If set, skip (no merge, no failure) unless the PR carries this exact label.                  |
+| `squash-authors`   | `''` (none)                | Author logins (comma/space-separated) whose PRs are API-squash-merged instead (see below).   |
+
+Outputs: `merged` (`"true"` on success, `"false"` when skipped for a missing `require-label`), `head-sha` (the commit
+the base branch now points to — the PR head for a fast-forward, the squash commit for a squash merge), `base`,
+`closed-issues` (comma-separated `owner/repo#number` of the linked issues closed by the merge).
+
+#### Squash merges for bot authors
+
+A PR authored by one of the `squash-authors` logins (any spelling: `the-marmack-renovate`, `the-marmack-renovate[bot]`,
+`app/the-marmack-renovate`) is merged with a **server-side API squash** instead of a fast-forward. This exists for bots like
+Renovate whose branches sit behind the base and are never rebased onto it: a squash needs no fast-forwardable branch
+(only a conflict-free one), and GitHub creates the squash commit itself — `web-flow`-signed, so a required-signatures
+ruleset stays satisfied even though the original authorship is collapsed. Every other gate (approval, green checks,
+arming label, PR state) applies unchanged, and GitHub runs its own keyword auto-close on this path, so the action's
+fast-forward-only issue-close replay is skipped.
+
+### Reusable `merge` workflow
+
+The inputs and secrets for the reusable `merge.yaml` (and the other callers) are documented in
+[`the-marmack/github-workflows`](https://github.com/the-marmack/github-workflows). Its `merge` job mints
+the App token and runs this action.
+
+## Development
+
+```sh
+npm ci
+npm run all     # biome + markdownlint, tsc --noEmit, vitest, rollup build
+npm test        # unit tests only
+npm run build   # rebuild dist/index.js
+make ci         # the same gates CI runs: make lint / build / test
+```
+
+| Path            | Role                                                                                                     |
+| --------------- | -------------------------------------------------------------------------------------------------------- |
+| `src/gating.ts` | pure gate logic — the unit-tested decision table                                                         |
+| `src/github.ts` | Octokit wrapper: paginated check rollup, GraphQL review decision & closing issues, ref move, issue close |
+| `src/inputs.ts` | input parsing                                                                                            |
+| `src/main.ts`   | orchestration                                                                                            |
+| `__tests__/`    | vitest                                                                                                   |
+| `dist/index.js` | the Rollup bundle consumers actually run — committed, and CI fails if it doesn't reproduce from `src/`   |
+
+There is no e2e: running the action for real would move a branch ref, so the gating logic is covered by the unit table
+instead, with the API's own non-fast-forward rejection as a backstop.
+
+### Releasing
+
+release-please runs in manifest mode (`release-please-config.json` + `.release-please-manifest.json`) so the first run
+is deterministic: the `0.0.0` manifest anchor plus the initial `feat:` commit cut `v0.1.0` rather than a bootstrapped
+guess. It watches `main` and keeps a release PR current from the Conventional Commit history. Releasing runs through the
+reusable `release.yaml` from `the-marmack/github-workflows`: merging the release PR cuts the `vX.Y.Z` tag and
+GitHub release, and the `vanity-tags` job moves the floating `v1` / `v1.1` tags that consumers of the action pin.
+`dist/` reproducibility from `src/` is verified in CI (`make build`), not at release.
+
+## Notes & caveats
+
+- **All checks must pass, not just required ones.** The gate blocks on _every_ entry in the head commit's status rollup.
+  If you run advisory checks that may fail, make them non-failing or filter the rollup in `src/gating.ts`.
+- **The "Verified" badge** needs the signer's key known to GitHub. The signature _bytes_ are preserved regardless; the
+  badge is the only part that depends on the public key being on the account/org.
+- **Pinning.** Consuming repos reference the reusable `…/github-workflows/.github/workflows/merge.yaml`, which in turn
+  references `the-marmack/ff-merge@<sha>` — pinned to a full commit SHA (the floating `v1` / `v1.1` tags the
+  release workflow maintains are also available for a looser posture). Renovate keeps the pins fresh.

@@ -1,0 +1,50 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+
+# Caller for the reusable release workflow. It owns the push trigger and grants the
+# release permissions; github-workflows/release.yaml runs release-please (release-type
+# node), then -- because vanity-tags is true -- moves the floating v1 / v1.1 tags that
+# consumers of the ff-merge action pin. A committed dist/ is verified in CI, not here.
+#
+# Pinned to a full commit SHA; Renovate keeps the pin fresh.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# Ceiling for the reusable workflow's release-please + goreleaser/docs/publish jobs.
+# GitHub resolves a reusable workflow's permissions as the union of every job and ignores
+# `if:`, so grant every scope below even though the goreleaser and docs jobs are skipped
+# here (no .goreleaser.yaml, no zensical.toml) -- a missing scope startup-fails the run.
+permissions:
+  # release-please cuts the release/tag; the vanity-tags job moves v1 / v1.1
+  contents: write
+  # release-please creates pr labels via the issues api
+  issues: write
+  # release-please opens the release pull request
+  pull-requests: write
+  # cosign keyless signing (goreleaser) + the docs job's Pages OIDC deploy
+  id-token: write
+  # github build-provenance attestation
+  attestations: write
+  # artifact storage record for the attestation
+  artifact-metadata: write
+  # push container images to ghcr (goreleaser dockers_v2, when configured)
+  packages: write
+  # publish the docs site to GitHub Pages (docs job, gated on a zensical.toml)
+  pages: write
+
+jobs:
+  release:
+    uses: the-marmack/github-workflows/.github/workflows/release.yaml@a0d0170124ad80a06082078b60669d7c99d33ee6 # v6.3.0
+    with:
+      # move the floating v1 / v1.1 tags consumers of the ff-merge action pin
+      vanity-tags: true
+      # Author the release PR as the "FF Merge" App (not the default GITHUB_TOKEN) so its
+      # branch push emits workflow_run events -- otherwise the auto-merge in merge.yaml
+      # (keyed on workflow_run) never retriggers when the release PR goes green and the PR
+      # only merges on the hourly sweep.
+      app-client-id: ${{ vars.FF_MERGE_CLIENT_ID }}
+    secrets:
+      app-private-key: ${{ secrets.FF_MERGE_PRIVATE_KEY }}

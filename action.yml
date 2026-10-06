@@ -1,0 +1,79 @@
+name: Fast-forward merge
+description: >-
+  Fast-forward a base branch to an approved, green pull request's head commit,
+  preserving the original commit signature. Verifies write access, approval,
+  passing checks, and a genuine fast-forward before moving the ref. Pull
+  requests from configured bot authors (squash-authors) are squash-merged
+  server-side instead — no rebase needed, squash commit signed by GitHub.
+author: the-marmack
+
+branding:
+  icon: git-merge
+  color: purple
+
+inputs:
+  token:
+    description: >-
+      GitHub App installation token with contents:write, pull-requests:write,
+      and administration:read, plus issues:write to auto-close linked issues
+      (omit it and the merge still succeeds; closing is skipped with a warning).
+      Typically minted by the calling workflow with actions/create-github-app-token.
+    required: true
+  repository:
+    description: The owner/repo whose base branch is fast-forwarded.
+    required: false
+    default: ${{ github.repository }}
+  pr-number:
+    description: Number of the pull request to fast-forward into its base branch.
+    required: true
+  actor:
+    description: >-
+      Login that requested the merge; checked for write access when
+      maintainer-only is true.
+    required: false
+    default: ${{ github.actor }}
+  require-approval:
+    description: Require the pull request's review decision to be APPROVED.
+    required: false
+    default: 'true'
+  maintainer-only:
+    description: Require the actor to have write or higher access.
+    required: false
+    default: 'true'
+  require-label:
+    description: >-
+      If set, only fast-forward when the pull request carries a label with this
+      exact name; otherwise skip without merging and without failing. Empty (the
+      default) imposes no label requirement. The auto-merge flow sets it to the
+      arming label. Needs no token scope beyond the pull-requests it already uses.
+    required: false
+    default: ''
+  squash-authors:
+    description: >-
+      Comma- or space-separated author logins (e.g. "the-marmack-renovate[bot]")
+      whose pull requests are merged with a server-side API squash instead of a
+      fast-forward. Meant for bots like Renovate whose branches sit behind the
+      base and are never rebased onto it: a squash needs no fast-forwardable
+      branch, and GitHub creates and web-flow-signs the squash commit, which
+      satisfies a required-signatures ruleset. Every other gate (approval,
+      checks, label) applies unchanged. Empty (the default) squashes nothing.
+    required: false
+    default: ''
+
+outputs:
+  merged:
+    description: '"true" if the pull request was merged.'
+  head-sha:
+    description: >-
+      The commit SHA the base branch now points to — the PR head for a
+      fast-forward, the squash commit for a squash merge.
+  base:
+    description: The base branch that was fast-forwarded.
+  closed-issues:
+    description: >-
+      Comma-separated "owner/repo#number" of the linked issues this merge closed
+      (the PR's closing-keyword references). Empty when there are none.
+
+runs:
+  using: node24
+  main: dist/index.js
