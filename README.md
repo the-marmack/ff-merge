@@ -4,9 +4,8 @@
 
 A GitHub Action for **signature-preserving fast-forward merges**. A maintainer comments `/merge` on an approved, green
 PR and the base branch is fast-forwarded to the PR head, keeping each commit's original signature. The reusable
-workflows that run this action live in
-[`the-marmack/github-workflows`](https://github.com/the-marmack/github-workflows) — consuming repos wire
-it up from there (see [Per-repo setup](#per-repo-setup)).
+workflows that run this action live in [`the-marmack/github-workflows`](https://github.com/the-marmack/github-workflows)
+— consuming repos wire it up from there (see [Per-repo setup](#per-repo-setup)).
 
 GitHub's merge button can't give you a linear history that keeps the **original developer's signature**:
 
@@ -33,10 +32,10 @@ marketplace actions.
 
 The reusable workflows that run this action — `merge.yaml` (manual `/merge` + set-and-forget `/auto-merge`),
 `merge-notice.yaml`, `merge-review-ack.yaml`, and `dependabot-merge.yaml` — live in
-[`the-marmack/github-workflows`](https://github.com/the-marmack/github-workflows); consuming repos copy
-the thin caller workflows from that repo's `examples/`. This repo dogfoods the merge flow via its own
-`.github/workflows/` (its dependency PRs come from the org Renovate bot, which squash-merges via the API, so the
-`dependabot-merge.yaml` caller is not used here — the reusable remains for consumers still on Dependabot).
+[`the-marmack/github-workflows`](https://github.com/the-marmack/github-workflows); consuming repos copy the thin caller
+workflows from that repo's `examples/`. This repo dogfoods the merge flow via its own `.github/workflows/` (its
+dependency PRs come from the org Renovate bot, which squash-merges via the API, so the `dependabot-merge.yaml` caller is
+not used here — the reusable remains for consumers still on Dependabot).
 
 ## How it works
 
@@ -115,16 +114,16 @@ org-level) **ruleset** — **Settings → Rules → Rulesets → New branch rule
 ## Per-repo setup
 
 Copy the merge callers from
-[`the-marmack/github-workflows/examples/`](https://github.com/the-marmack/github-workflows/tree/main/examples)
-into the consuming repo's `.github/workflows/` — `merge.yaml` (and optionally `merge-notice.yaml`,
-`merge-review-ack.yaml`, and `dependabot-merge.yaml`) — and pin each `uses:` to a release tag or full commit SHA. That's
-the entire per-repo footprint; then a maintainer can comment `/merge` on any approved, green, up-to-date PR.
+[`the-marmack/github-workflows/examples/`](https://github.com/the-marmack/github-workflows/tree/main/examples) into the
+consuming repo's `.github/workflows/` — `merge.yaml` (and optionally `merge-notice.yaml`, `merge-review-ack.yaml`, and
+`dependabot-merge.yaml`) — and pin each `uses:` to a release tag or full commit SHA. That's the entire per-repo
+footprint; then a maintainer can comment `/merge` on any approved, green, up-to-date PR.
 
 ## `merge-notice` — tell contributors how to merge
 
-`the-marmack/github-workflows` ships a companion `merge-notice.yaml`: when a PR is opened it posts a single
-comment explaining that the repo merges by fast-forward via a `/merge` comment, so contributors who don't know the
-convention don't reach for the merge button.
+`the-marmack/github-workflows` ships a companion `merge-notice.yaml`: when a PR is opened it posts a single comment
+explaining that the repo merges by fast-forward via a `/merge` comment, so contributors who don't know the convention
+don't reach for the merge button.
 
 It triggers on **`pull_request_target` (opened)** rather than `pull_request`, so the notice also reaches **fork PRs** —
 where it matters most, since a fork's `pull_request` token is read-only and couldn't comment. This is the safe use of
@@ -162,18 +161,18 @@ the base branch now points to — the PR head for a fast-forward, the squash com
 #### Squash merges for bot authors
 
 A PR authored by one of the `squash-authors` logins (any spelling: `the-marmack-renovate`, `the-marmack-renovate[bot]`,
-`app/the-marmack-renovate`) is merged with a **server-side API squash** instead of a fast-forward. This exists for bots like
-Renovate whose branches sit behind the base and are never rebased onto it: a squash needs no fast-forwardable branch
-(only a conflict-free one), and GitHub creates the squash commit itself — `web-flow`-signed, so a required-signatures
-ruleset stays satisfied even though the original authorship is collapsed. Every other gate (approval, green checks,
-arming label, PR state) applies unchanged, and GitHub runs its own keyword auto-close on this path, so the action's
-fast-forward-only issue-close replay is skipped.
+`app/the-marmack-renovate`) is merged with a **server-side API squash** instead of a fast-forward. This exists for bots
+like Renovate whose branches sit behind the base and are never rebased onto it: a squash needs no fast-forwardable
+branch (only a conflict-free one), and GitHub creates the squash commit itself — `web-flow`-signed, so a
+required-signatures ruleset stays satisfied even though the original authorship is collapsed. Every other gate
+(approval, green checks, arming label, PR state) applies unchanged, and GitHub runs its own keyword auto-close on this
+path, so the action's fast-forward-only issue-close replay is skipped.
 
 ### Reusable `merge` workflow
 
 The inputs and secrets for the reusable `merge.yaml` (and the other callers) are documented in
-[`the-marmack/github-workflows`](https://github.com/the-marmack/github-workflows). Its `merge` job mints
-the App token and runs this action.
+[`the-marmack/github-workflows`](https://github.com/the-marmack/github-workflows). Its `merge` job mints the App token
+and runs this action.
 
 ## Development
 
@@ -202,9 +201,9 @@ instead, with the API's own non-fast-forward rejection as a backstop.
 release-please runs in manifest mode (`release-please-config.json` + `.release-please-manifest.json`) so the first run
 is deterministic: the `0.0.0` manifest anchor plus the initial `feat:` commit cut `v0.1.0` rather than a bootstrapped
 guess. It watches `main` and keeps a release PR current from the Conventional Commit history. Releasing runs through the
-reusable `release.yaml` from `the-marmack/github-workflows`: merging the release PR cuts the `vX.Y.Z` tag and
-GitHub release, and the `vanity-tags` job moves the floating `v1` / `v1.1` tags that consumers of the action pin.
-`dist/` reproducibility from `src/` is verified in CI (`make build`), not at release.
+reusable `release.yaml` from `the-marmack/github-workflows`: merging the release PR cuts the `vX.Y.Z` tag and GitHub
+release, and the `vanity-tags` job moves the floating `v1` / `v1.1` tags that consumers of the action pin. `dist/`
+reproducibility from `src/` is verified in CI (`make build`), not at release.
 
 ## Notes & caveats
 
@@ -213,5 +212,5 @@ GitHub release, and the `vanity-tags` job moves the floating `v1` / `v1.1` tags 
 - **The "Verified" badge** needs the signer's key known to GitHub. The signature _bytes_ are preserved regardless; the
   badge is the only part that depends on the public key being on the account/org.
 - **Pinning.** Consuming repos reference the reusable `…/github-workflows/.github/workflows/merge.yaml`, which in turn
-  references `the-marmack/ff-merge@<sha>` — pinned to a full commit SHA (the floating `v1` / `v1.1` tags the
-  release workflow maintains are also available for a looser posture). Renovate keeps the pins fresh.
+  references `the-marmack/ff-merge@<sha>` — pinned to a full commit SHA (the floating `v1` / `v1.1` tags the release
+  workflow maintains are also available for a looser posture). Renovate keeps the pins fresh.
