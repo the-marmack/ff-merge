@@ -37,14 +37,14 @@ permissions:
 
 jobs:
   release:
-    uses: the-marmack/github-workflows/.github/workflows/release.yaml@c30dd535f3d8386a204c20d54f0cd52489a2b4f1 # v6.3.0
+    uses: the-marmack/github-workflows/.github/workflows/release.yaml@7350928cd5ff2fd5dde4908d9e8b17b2497109cc # main
     with:
       # move the floating v1 / v1.1 tags consumers of the ff-merge action pin
       vanity-tags: true
+    secrets:
       # Author the release PR as the "FF Merge" App (not the default GITHUB_TOKEN) so its
       # branch push emits workflow_run events -- otherwise the auto-merge in merge.yaml
       # (keyed on workflow_run) never retriggers when the release PR goes green and the PR
       # only merges on the hourly sweep.
-      app-client-id: ${{ vars.FF_MERGE_CLIENT_ID }}
-    secrets:
+      app-client-id: ${{ secrets.FF_MERGE_CLIENT_ID }}
       app-private-key: ${{ secrets.FF_MERGE_PRIVATE_KEY }}
