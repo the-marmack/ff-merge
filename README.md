@@ -92,10 +92,10 @@ The App must be installed on every repo that calls the workflow.
 
 Org **Settings → Secrets and variables → Actions**:
 
-- **Variables → New** → `FF_MERGE_CLIENT_ID` = the Client ID.
+- **Secrets → New** → `FF_MERGE_CLIENT_ID` = the Client ID.
 - **Secrets → New** → `FF_MERGE_PRIVATE_KEY` = the full contents of the `.pem`.
 
-Set both to **All repositories** (or scope to selected repos), so consuming repos need no per-repo secret config.
+Share both with **Selected repositories**: the repos whose workflows call `merge.yaml` or `release.yaml`.
 
 ### 4. Let the App bypass branch protection
 
